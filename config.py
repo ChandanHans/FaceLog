@@ -24,7 +24,7 @@ DB_URL: str = os.getenv("DB_URL")
 
 # ─── Redis ────────────────────────────────────────────────────────────────────
 REDIS_URL: str = os.getenv("REDIS_URL")
-REDIS_QUEUE_KEY: str = "entry_exit:face_queue"
+REDIS_QUEUE_KEY: str = "facelog:face_queue"
 
 # ─── Camera ───────────────────────────────────────────────────────────────────
 CAMERA_SOURCE = os.getenv("CAMERA_SOURCE", "0")  # default: first webcam
@@ -65,4 +65,4 @@ WORKER_PROCESSES: int = int(os.getenv("WORKER_PROCESSES", "2"))  # see .env
 JPEG_QUALITY: int = int(os.getenv("JPEG_QUALITY", "75"))  # see .env
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
-LOG_FILE: str = os.getenv("LOG_FILE", "logs/entry_exit.log")  # see .env
+LOG_FILE: str = os.getenv("LOG_FILE", "logs/facelog.log")  # see .env

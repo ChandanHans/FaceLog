@@ -1,5 +1,5 @@
 """
-main.py — Single entry point for the Entry/Exit Security System.
+main.py — Single entry point for the FaceLog Security System.
 
 Commands
 ────────
@@ -120,7 +120,7 @@ def cmd_capture(args):
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="main.py",
-        description="Entry/Exit Security System",
+        description="FaceLog",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -165,7 +165,7 @@ def _interactive_menu():
     """Prompt the user interactively when no CLI arguments are given."""
     menu = """
 ╔══════════════════════════════════════════════╗
-║       Entry / Exit Security System           ║
+║              FaceLog                         ║
 ╠══════════════════════════════════════════════╣
 ║  1. Start camera (run)                       ║
 ║  2. Setup database                           ║

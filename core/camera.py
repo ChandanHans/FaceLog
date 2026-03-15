@@ -122,7 +122,7 @@ def run_camera(source, show_display: bool = True, camera_id: str = CAMERA_ID):
 
     log.info(f"Source={source}  orig={orig_w}x{orig_h}  det={det_w}x{det_h}")
 
-    win = "Entry/Exit Security - press Q to quit"
+    win = "FaceLog - press Q to quit"
     if show_display:
         cv2.namedWindow(win, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(win, 1280, 720)

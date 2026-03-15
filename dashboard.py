@@ -1,5 +1,5 @@
 """
-dashboard.py — Streamlit web UI for the Entry/Exit Security System.
+dashboard.py — Streamlit web UI for FaceLog.
 
 Run with:
     streamlit run dashboard.py
@@ -20,7 +20,7 @@ import db
 # ── Page config ───────────────────────────────────────────────────────────────
 
 st.set_page_config(
-    page_title="Entry/Exit Security",
+    page_title="FaceLog",
     page_icon="🔐",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -28,7 +28,7 @@ st.set_page_config(
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
 
-st.sidebar.title("🔐 Entry/Exit Security")
+st.sidebar.title("🔐 FaceLog")
 page = st.sidebar.radio(
     "Navigate",
     ["📋 Recent Sightings", "🔍 Review Unknowns", "👥 People Directory"],

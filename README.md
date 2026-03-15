@@ -1,4 +1,4 @@
-# Entry/Exit Security System
+# FaceLog
 
 A real-time face detection and recognition system for monitoring department entry and exit points. Every person detected by the camera is logged to PostgreSQL with a face image. Known persons are identified automatically; unknown faces are queued for admin review via a web dashboard.
 
@@ -41,7 +41,7 @@ Admin
 ## Project Structure
 
 ```
-entry-exit/
+facelog/
 ├── main.py              # Single CLI entry point
 ├── dashboard.py         # Streamlit web dashboard
 ├── config.py            # All settings (loaded from .env)
@@ -108,7 +108,7 @@ Copy-Item .env.example .env
 Edit `.env`:
 
 ```env
-DB_URL=postgresql://postgres:yourpassword@localhost:5432/entry_exit
+DB_URL=postgresql://postgres:yourpassword@localhost:5432/facelog
 REDIS_URL=redis://localhost:6379/0
 CAMERA_SOURCE=0
 CAMERA_ID=cam_01
@@ -149,7 +149,7 @@ python main.py
 
 ```
 ╔══════════════════════════════════════════════╗
-║       Entry / Exit Security System           ║
+║              FaceLog                         ║
 ╠══════════════════════════════════════════════╣
 ║  1. Start camera (run)                       ║
 ║  2. Setup database                           ║
@@ -263,7 +263,7 @@ All values can be set in `.env`. Defaults shown below.
 | `RECOGNITION_TOLERANCE` | `0.48` | Face match threshold (lower = stricter) |
 | `FACE_QUEUE_COOLDOWN` | `60` | Seconds before same person can be re-queued |
 | `JPEG_QUALITY` | `75` | Quality of stored face images |
-| `LOG_FILE` | `logs/entry_exit.log` | Log output path |
+| `LOG_FILE` | `logs/facelog.log` | Log output path |
 
 ### Detection tuning (in `config.py`)
 
