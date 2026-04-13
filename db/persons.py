@@ -106,6 +106,42 @@ def get_person_names() -> list[tuple[int, str]]:
         return cur.fetchall()
 
 
+def delete_person(person_id: int) -> None:
+    """Delete a person record. Related sightings get person_id = NULL."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM persons WHERE id = %s", (person_id,))
+
+
+def delete_orphaned_unknowns() -> int:
+    """
+    Delete 'unknown' person rows that no sighting points to any more.
+    Returns the number of persons deleted.
+    """
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            DELETE FROM persons
+             WHERE label = 'unknown'
+               AND id NOT IN (
+                   SELECT DISTINCT person_id FROM sightings WHERE person_id IS NOT NULL
+               )
+            """
+        )
+        return cur.rowcount
+
+
+def reset_person_encoding(person_id: int) -> None:
+    """Clear a person's face encoding and reference image for re-enrollment."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE persons SET face_encoding = NULL, reference_image = NULL WHERE id = %s",
+            (person_id,),
+        )
+
+
 def merge_person_encoding(person_id: int, new_encoding) -> None:
     """
     Average `new_encoding` with the person's existing stored encoding.

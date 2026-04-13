@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS sightings (
                          CHECK (direction IN ('entry', 'exit', 'unknown')),
     camera_id        TEXT NOT NULL DEFAULT 'cam_01',
     face_image       BYTEA NOT NULL,                -- cropped face JPEG bytes
+    face_encoding    BYTEA,                         -- pickled 128-D numpy array (cached)
     full_frame_image BYTEA,                         -- thumbnail of full frame
     confidence       FLOAT,
     status           TEXT NOT NULL DEFAULT 'pending'
@@ -70,6 +71,13 @@ def create_tables():
         conn.autocommit = True
         cur = conn.cursor()
         cur.execute(DDL)
+        # Migration: add face_encoding column if it doesn't exist yet
+        cur.execute(
+            """
+            ALTER TABLE sightings
+              ADD COLUMN IF NOT EXISTS face_encoding BYTEA;
+            """
+        )
         print("✅ All tables created (or already exist).")
         cur.close()
         conn.close()

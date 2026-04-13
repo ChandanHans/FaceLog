@@ -84,7 +84,7 @@ def detect_faces_in_roi(
 
     gray = cv2.cvtColor(roi_r, cv2.COLOR_BGR2GRAY)
     faces_raw = face_cascade.detectMultiScale(
-        gray, scaleFactor=1.1, minNeighbors=4, minSize=(30, 30)
+        gray, scaleFactor=1.1, minNeighbors=7, minSize=(50, 50)
     )
 
     detections = []
@@ -99,7 +99,7 @@ def detect_faces_in_roi(
         if face_crop.size == 0:
             continue
         crop_gray = cv2.cvtColor(face_crop, cv2.COLOR_BGR2GRAY)
-        eyes = eye_cascade.detectMultiScale(crop_gray, scaleFactor=1.1, minNeighbors=3)
+        eyes = eye_cascade.detectMultiScale(crop_gray, scaleFactor=1.1, minNeighbors=5)
         n_eyes = len(eyes)
 
         ratio = fw / fh if fh else 0

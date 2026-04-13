@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { background: transparent; overflow-x: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  #toolbar {
+    display: flex;
+    gap: 6px;
+    padding: 4px 2px 6px;
+    align-items: center;
+  }
+  #toolbar button {
+    padding: 3px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    background: #262730;
+    color: #ccc;
+    border: 1px solid #444;
+    border-radius: 4px;
+  }
+  #toolbar button:hover { background: #333; }
+  #count { font-size: 11px; color: #888; margin-left: 4px; }
+
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 3px;
+  }
+
+  .cell {
+    position: relative;
+    cursor: pointer;
+    border-radius: 3px;
+    overflow: hidden;
+    border: 2px solid transparent;
+    transition: border-color 0.08s;
+  }
+  .cell:hover { border-color: #555; }
+  .cell.selected { border-color: #4dabf7; }
+
+  .cell img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    display: block;
+  }
+  .no-img {
+    width: 100%;
+    aspect-ratio: 1;
+    background: #1a1a1a;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #444;
+    font-size: 9px;
+  }
+  .lbl {
+    font-size: 8px;
+    color: #888;
+    padding: 1px 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: rgba(0,0,0,0.5);
+  }
+  .chk {
+    position: absolute;
+    top: 2px; right: 2px;
+    width: 14px; height: 14px;
+    background: #4dabf7;
+    border-radius: 50%;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    color: #000;
+    font-size: 9px;
+    font-weight: bold;
+    line-height: 1;
+  }
+  .cell.selected .chk { display: flex; }
+
+  #drag-rect {
+    position: fixed;
+    border: 1px solid #4dabf7;
+    background: rgba(77, 171, 247, 0.1);
+    pointer-events: none;
+    display: none;
+    z-index: 9999;
+  }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <button id="btn-all">☑ All</button>
+  <button id="btn-none">⬜ None</button>
+  <span id="count">0 selected</span>
+</div>
+<div id="grid"></div>
+<div id="drag-rect"></div>
+
+<script>
+  let items = [];
+  let selected = new Set();
+
+  // ── Streamlit component protocol ──────────────────────────────────────────
+  function post(msg) {
+    window.parent.postMessage({ isStreamlitMessage: true, ...msg }, "*");
+  }
+  function sendReady()  { post({ type: "streamlit:componentReady", apiVersion: 1 }); }
+  function sendHeight() {
+    const h = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
+    post({ type: "streamlit:setFrameHeight", height: h + 8 });
+  }
+  function sendValue() {
+    updateCount();
+    post({ type: "streamlit:setComponentValue", value: Array.from(selected) });
+  }
+
+  window.addEventListener("message", (e) => {
+    if (e.data && e.data.type === "streamlit:render") render(e.data.args || {});
+  });
+
+  // ── Render grid ───────────────────────────────────────────────────────────
+  function render(args) {
+    const newItems = args.items || [];
+    // drop selections for items no longer in the list
+    const newIds = new Set(newItems.map(i => i.id));
+    for (const id of [...selected]) { if (!newIds.has(id)) selected.delete(id); }
+    items = newItems;
+
+    const grid = document.getElementById("grid");
+    grid.innerHTML = "";
+
+    items.forEach((item) => {
+      const cell = document.createElement("div");
+      cell.className = "cell" + (selected.has(item.id) ? " selected" : "");
+      cell.dataset.id = String(item.id);
+
+      if (item.img_b64) {
+        const img = document.createElement("img");
+        img.src = "data:image/jpeg;base64," + item.img_b64;
+        img.draggable = false;
+        cell.appendChild(img);
+      } else {
+        const ph = document.createElement("div");
+        ph.className = "no-img";
+        ph.textContent = "no image";
+        cell.appendChild(ph);
+      }
+
+      const lbl = document.createElement("div");
+      lbl.className = "lbl";
+      lbl.textContent = "#" + item.id + (item.caption ? " · " + item.caption : "");
+      cell.appendChild(lbl);
+
+      const chk = document.createElement("div");
+      chk.className = "chk";
+      chk.textContent = "✓";
+      cell.appendChild(chk);
+
+      grid.appendChild(cell);
+    });
+
+    updateCount();
+    setTimeout(sendHeight, 60);
+  }
+
+  function updateCount() {
+    const n = selected.size;
+    document.getElementById("count").textContent = n === 0 ? "0 selected" : n + " selected";
+  }
+
+  // ── Toolbar buttons ───────────────────────────────────────────────────────
+  document.getElementById("btn-all").addEventListener("click", () => {
+    items.forEach(i => selected.add(i.id));
+    document.querySelectorAll(".cell").forEach(c => c.classList.add("selected"));
+    sendValue();
+  });
+  document.getElementById("btn-none").addEventListener("click", () => {
+    selected.clear();
+    document.querySelectorAll(".cell").forEach(c => c.classList.remove("selected"));
+    sendValue();
+  });
+
+  // ── Click to toggle ───────────────────────────────────────────────────────
+  document.getElementById("grid").addEventListener("click", (e) => {
+    if (wasDragging) return;
+    const cell = e.target.closest(".cell");
+    if (!cell) return;
+    const id = parseInt(cell.dataset.id);
+    if (selected.has(id)) selected.delete(id);
+    else selected.add(id);
+    cell.classList.toggle("selected", selected.has(id));
+    sendValue();
+  });
+
+  // ── Drag rubber-band select ───────────────────────────────────────────────
+  let dragOrigin = null;
+  let wasDragging = false;
+  const dragRect = document.getElementById("drag-rect");
+
+  document.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    dragOrigin = { x: e.clientX, y: e.clientY };
+    wasDragging = false;
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (!dragOrigin) return;
+    if (!wasDragging && Math.hypot(e.clientX - dragOrigin.x, e.clientY - dragOrigin.y) < 5) return;
+    wasDragging = true;
+    const x = Math.min(e.clientX, dragOrigin.x);
+    const y = Math.min(e.clientY, dragOrigin.y);
+    const w = Math.abs(e.clientX - dragOrigin.x);
+    const h = Math.abs(e.clientY - dragOrigin.y);
+    dragRect.style.cssText =
+      "display:block;left:" + x + "px;top:" + y + "px;width:" + w + "px;height:" + h + "px;";
+  });
+
+  document.addEventListener("mouseup", (e) => {
+    dragRect.style.display = "none";
+    if (dragOrigin && wasDragging) {
+      const sel = {
+        left:   Math.min(e.clientX, dragOrigin.x),
+        top:    Math.min(e.clientY, dragOrigin.y),
+        right:  Math.max(e.clientX, dragOrigin.x),
+        bottom: Math.max(e.clientY, dragOrigin.y),
+      };
+      document.querySelectorAll(".cell").forEach(cell => {
+        const r = cell.getBoundingClientRect();
+        if (r.left < sel.right && r.right > sel.left &&
+            r.top  < sel.bottom && r.bottom > sel.top) {
+          selected.add(parseInt(cell.dataset.id));
+          cell.classList.add("selected");
+        }
+      });
+      sendValue();
+    }
+    dragOrigin = null;
+    setTimeout(() => { wasDragging = false; }, 10);
+  });
+
+  sendReady();
+</script>
+</body>
+</html>

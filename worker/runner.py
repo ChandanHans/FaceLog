@@ -38,12 +38,12 @@ def _handle_signal(signum, frame):
     _running = False
 
 
-signal.signal(signal.SIGTERM, _handle_signal)
-signal.signal(signal.SIGINT, _handle_signal)
-
-
 def run_worker():
     """Main loop: pull jobs from Redis and resolve sightings."""
+    # Register signals here, inside the worker process/thread (main thread only)
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
+
     pid = os.getpid()
     log.info(f"Worker started (pid={pid})")
 
@@ -75,7 +75,7 @@ def run_worker():
         face_jpeg = bytes.fromhex(face_jpeg_hex)
 
         try:
-            person_id, name, confidence = recognize(
+            person_id, name, confidence, query_enc = recognize(
                 face_jpeg, known_persons, RECOGNITION_TOLERANCE
             )
 
@@ -88,6 +88,9 @@ def run_worker():
                 log.info(f"Sighting {sighting_id}: unmatched → new unknown person id={person_id}")
 
             db.resolve_sighting(sighting_id, status, person_id=person_id, confidence=confidence)
+            # Cache the 128-D encoding so future re-matching is fast (no image decode needed)
+            if query_enc is not None:
+                db.save_sighting_encoding(sighting_id, query_enc)
             db.mark_queue_processed(sighting_id, worker_pid=pid)
 
         except Exception as exc:

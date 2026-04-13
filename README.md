@@ -1,6 +1,6 @@
 # FaceLog
 
-A real-time face detection and recognition system for monitoring department entry and exit points. Every person detected by the camera is logged to PostgreSQL with a face image. Known persons are identified automatically; unknown faces are queued for admin review via a web dashboard.
+FaceLog automates visual identity logging at entry/exit points, replacing manual monitoring with a real-time camera-based system that stores evidence and flags unknowns for review.
 
 ---
 
