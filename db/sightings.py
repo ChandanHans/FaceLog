@@ -17,7 +17,7 @@ def insert_sighting(
     camera_id: str,
     raw_meta: dict,
     full_frame_image: Optional[bytes] = None,
-    direction: str = "unknown",
+    direction: str = "entry",
 ) -> int:
     """Insert a new pending sighting. Returns new sighting id."""
     with get_conn() as conn:
@@ -116,20 +116,49 @@ def delete_sightings(ids: list) -> int:
         return cur.rowcount
 
 
-def get_recent_sightings(limit: int = 100) -> list:
-    """Fetch recent sightings joined with person name."""
+def get_sighting_date_range() -> tuple:
+    """Return (oldest_date, newest_date) from sightings, or (None, None) if table is empty."""
+    with get_conn() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT MIN(detected_at)::date, MAX(detected_at)::date FROM sightings")
+        row = cur.fetchone()
+        return (row[0], row[1]) if row else (None, None)
+
+
+def get_recent_sightings(
+    limit: int = 100,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    direction: Optional[str] = None,
+) -> list:
+    """Fetch recent sightings joined with person name, including face and full-frame images."""
+    filters = []
+    params: list = []
+    if date_from:
+        filters.append("s.detected_at >= %s")
+        params.append(date_from)
+    if date_to:
+        filters.append("s.detected_at < %s")
+        params.append(date_to)
+    if direction:
+        filters.append("s.direction = %s")
+        params.append(direction)
+    where = ("WHERE " + " AND ".join(filters)) if filters else ""
+    params.append(limit)
     with get_conn() as conn:
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute(
-            """
+            f"""
             SELECT s.id, s.detected_at, s.direction, s.camera_id,
                    s.status, s.confidence,
+                   s.face_image, s.full_frame_image,
                    p.name, p.label
               FROM sightings s
               LEFT JOIN persons p ON p.id = s.person_id
+             {where}
              ORDER BY s.detected_at DESC
              LIMIT %s
             """,
-            (limit,),
+            params,
         )
         return cur.fetchall()

@@ -10,6 +10,10 @@ Commands
   python main.py run --no-display           # headless mode (server / CCTV)
   python main.py run --workers 4            # override worker count
 
+  # Two-camera setup (entry + exit in one command):
+  python main.py run --source 0 --camera-id cam_entry --direction entry \
+                     --source2 1 --camera-id2 cam_exit --direction2 exit
+
   python main.py setup-db                   # create PostgreSQL tables
 
   python main.py admin list                 # show unmatched sightings
@@ -30,7 +34,11 @@ import sys
 import app_state
 from config import (
     CAMERA_ID,
+    CAMERA_DIRECTION,
     CAMERA_SOURCE,
+    CAMERA_ID2,
+    CAMERA_DIRECTION2,
+    CAMERA_SOURCE2,
     LOG_FILE,
     WORKER_PROCESSES,
 )
@@ -69,11 +77,12 @@ signal.signal(signal.SIGINT, _handle_signal)
 # ── Subcommands ───────────────────────────────────────────────────────────────
 
 def cmd_run(args):
+    import multiprocessing
     from db.setup import create_tables
     from core.camera import run_camera
     from worker.runner import start_workers, stop_workers
 
-    # Resolve camera source
+    # ── Camera 1 (primary) ────────────────────────────────────────────────
     source = args.source
     if source is None:
         source = CAMERA_SOURCE
@@ -81,21 +90,49 @@ def cmd_run(args):
         source = int(source)
 
     camera_id = args.camera_id or CAMERA_ID
+    direction = args.direction or CAMERA_DIRECTION
     n_workers = args.workers or WORKER_PROCESSES
 
-    log.info("Ensuring database schema exists…")
+    # ── Camera 2 (optional exit camera) ───────────────────────────────────
+    source2 = args.source2 or (CAMERA_SOURCE2 if CAMERA_SOURCE2 else None)
+    if source2 is not None and isinstance(source2, str) and source2.isdigit():
+        source2 = int(source2)
+    camera_id2 = args.camera_id2 or CAMERA_ID2
+    direction2 = args.direction2 or CAMERA_DIRECTION2
+
+    log.info("Ensuring database schema exists...")
     create_tables()
 
-    log.info(f"Starting {n_workers} recognition worker(s)…")
+    log.info(f"Starting {n_workers} recognition worker(s)...")
     workers = start_workers(n_workers)
+
+    # Spawn second camera process if --source2 provided
+    cam2_proc = None
+    if source2 is not None:
+        log.info(f"Starting exit camera: source={source2} id={camera_id2}")
+        cam2_proc = multiprocessing.Process(
+            target=run_camera,
+            kwargs=dict(
+                source=source2,
+                show_display=not args.no_display,
+                camera_id=camera_id2,
+                direction=direction2,
+            ),
+            daemon=True,
+        )
+        cam2_proc.start()
 
     try:
         run_camera(
             source=source,
             show_display=not args.no_display,
             camera_id=camera_id,
+            direction=direction,
         )
     finally:
+        if cam2_proc and cam2_proc.is_alive():
+            cam2_proc.terminate()
+            cam2_proc.join(timeout=5)
         stop_workers(workers)
         log.info("Shutdown complete")
 
@@ -139,6 +176,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument(
         "--camera-id", default=None,
         help="Logical camera name stored in DB (default: CAMERA_ID from .env)"
+    )
+    p_run.add_argument(
+        "--direction", default=None, choices=["entry", "exit"],
+        help="Mark all sightings from this camera as 'entry' or 'exit'. Defaults to CAMERA_DIRECTION in .env (default: entry)"
+    )
+    p_run.add_argument(
+        "--source2", default=None,
+        help="(Optional) Second camera source for exit recording. Camera index (1), file, or RTSP URL."
+    )
+    p_run.add_argument(
+        "--camera-id2", default=None,
+        help="Logical name for second camera stored in DB (default: cam_exit)"
+    )
+    p_run.add_argument(
+        "--direction2", default=None, choices=["entry", "exit"],
+        help="Direction for second camera (default: exit)"
     )
     p_run.add_argument(
         "--workers", type=int, default=None,
@@ -191,7 +244,11 @@ def _interactive_menu():
             source=source,
             no_display=no_display,
             camera_id=None,
+            direction=None,
             workers=workers,
+            source2=None,
+            camera_id2=None,
+            direction2=None,
         )
         cmd_run(args)
 

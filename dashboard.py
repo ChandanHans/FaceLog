@@ -44,6 +44,10 @@ page = st.sidebar.radio(
 )
 st.sidebar.markdown("---")
 if st.sidebar.button("🔄 Refresh"):
+    import datetime as _dt_refresh
+    _today_refresh = _dt_refresh.date.today()
+    st.session_state.pop("rs_from", None)
+    st.session_state.pop("rs_to", None)
     st.rerun()
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -139,10 +143,40 @@ LABEL_ICON = {
 if page == "📋 Recent Sightings":
     st.title("📋 Recent Sightings")
 
-    limit = st.sidebar.number_input(
-        "Show last N sightings", min_value=10, max_value=500, value=50, step=10
+    import datetime as _dt
+    _today = _dt.date.today()
+
+    _oldest_date, _newest_date = db.get_sighting_date_range()
+    _min_date = _oldest_date if _oldest_date else _today
+    _max_date = _newest_date if _newest_date else _today
+
+    # Initialise session state defaults clamped within the allowed range
+    if "rs_from" not in st.session_state or not (_min_date <= st.session_state["rs_from"] <= _max_date):
+        st.session_state["rs_from"] = _max_date
+    if "rs_to" not in st.session_state or not (_min_date <= st.session_state["rs_to"] <= _max_date):
+        st.session_state["rs_to"] = _max_date
+
+    st.sidebar.markdown("**Date filter**")
+    _sc1, _sc2 = st.sidebar.columns(2)
+    date_from = _sc1.date_input("From", key="rs_from", label_visibility="collapsed", format="DD/MM/YYYY", min_value=_min_date, max_value=_max_date)
+    _sc1.caption("From")
+    date_to   = _sc2.date_input("To",   key="rs_to",   label_visibility="collapsed", format="DD/MM/YYYY", min_value=_min_date, max_value=_max_date)
+    _sc2.caption("To")
+
+    _sd1, _sd2 = st.sidebar.columns(2)
+    direction_filter = _sd1.selectbox("Dir", ["All", "entry", "exit"], index=0, key="rs_dir", label_visibility="collapsed")
+    _sd1.caption("Direction")
+    limit = _sd2.number_input("N", min_value=10, max_value=500, value=200, step=10, key="rs_limit", label_visibility="collapsed")
+    _sd2.caption("Max rows")
+
+    _from_dt = _dt.datetime.combine(date_from, _dt.time.min)
+    _to_dt   = _dt.datetime.combine(date_to,   _dt.time.max).replace(microsecond=999999)
+    rows = db.get_recent_sightings(
+        limit=int(limit),
+        date_from=_from_dt,
+        date_to=_to_dt,
+        direction=direction_filter if direction_filter != "All" else None,
     )
-    rows = db.get_recent_sightings(limit=int(limit))
 
     if not rows:
         st.info("No sightings recorded yet.")
@@ -156,23 +190,42 @@ if page == "📋 Recent Sightings":
 
         st.markdown("---")
 
-        data = [
-            {
-                "ID": r["id"],
-                "Status": f"{STATUS_ICON.get(r['status'], '⚪')} {r['status']}",
-                "Person": r["name"] or "—",
-                "Label":  r["label"] or "—",
-                "Camera": r["camera_id"],
-                "Direction": r["direction"],
-                "Confidence": f"{r['confidence']:.0%}" if r["confidence"] else "—",
-                "Detected At": (
-                    r["detected_at"].strftime("%Y-%m-%d %H:%M:%S")
-                    if r["detected_at"] else "—"
-                ),
-            }
-            for r in rows
-        ]
-        st.dataframe(pd.DataFrame(data), use_container_width=True, hide_index=True)
+        _PLACEHOLDER = (
+            "<div style='background:#1a1a1a;border-radius:4px;height:80px;"
+            "display:flex;align-items:center;justify-content:center;"
+            "color:#444;font-size:11px'>{}</div>"
+        )
+        for r in rows:
+            face       = _img(r["face_image"])
+            full_frame = _img(r["full_frame_image"])
+
+            col_face, col_full, col_meta = st.columns([1, 2, 4])
+
+            with col_face:
+                if face:
+                    st.image(BytesIO(face), caption="Crop", use_container_width=True)
+                else:
+                    st.markdown(_PLACEHOLDER.format("no crop"), unsafe_allow_html=True)
+
+            with col_full:
+                if full_frame:
+                    st.image(BytesIO(full_frame), caption="Full frame", use_container_width=True)
+                else:
+                    st.markdown(_PLACEHOLDER.format("no frame"), unsafe_allow_html=True)
+
+            with col_meta:
+                icon = STATUS_ICON.get(r["status"], "⚪")
+                direction_str  = ("→ Entry" if r["direction"] == "entry" else "← Exit") if r["direction"] else "—"
+                confidence_str = f"{r['confidence']:.0%}" if r["confidence"] else "—"
+                time_str       = r["detected_at"].strftime("%Y-%m-%d %H:%M:%S") if r["detected_at"] else "—"
+                st.markdown(
+                    f"**#{r['id']}** &nbsp; {icon} `{r['status']}`  \n"
+                    f"👤 **{r['name'] or '—'}** &nbsp;·&nbsp; {direction_str}  \n"
+                    f"📷 `{r['camera_id']}` &nbsp;·&nbsp; Conf: {confidence_str}  \n"
+                    f"🕐 {time_str}"
+                )
+
+            st.divider()
 
 # ── Page: Review Unknowns ─────────────────────────────────────────────────────
 

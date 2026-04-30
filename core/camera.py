@@ -22,6 +22,7 @@ import db
 import app_state
 from config import (
     CAMERA_ID,
+    CAMERA_DIRECTION,
     DETECTION_WIDTH,
     JPEG_QUALITY,
     LOG_FILE,
@@ -42,10 +43,110 @@ def _push_to_queue(r: redis.Redis, sighting_id: int, face_jpeg: bytes):
     r.rpush(REDIS_QUEUE_KEY, json.dumps(job))
 
 
+import platform as _platform
+
+# Windows: Docker runs as a GUI app (Docker Desktop)
+_DOCKER_DESKTOP_EXE = r"C:\Program Files\Docker\Docker\Docker Desktop.exe"
+
+# Daemon-not-running error phrases (same on Windows and Linux)
+_DAEMON_NOT_RUNNING_PHRASES = (
+    "error during connect",
+    "is the docker daemon running",
+    "cannot connect to the docker daemon",
+    "open //./pipe/docker_engine",   # Windows named pipe
+    "/var/run/docker.sock",          # Linux socket missing
+)
+
+
+def _is_docker_daemon_running() -> bool:
+    """Return True if the Docker daemon is reachable (docker info succeeds)."""
+    try:
+        result = subprocess.run(
+            ["docker", "info"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+def _start_docker_daemon() -> bool:
+    """
+    Start the Docker daemon in a platform-appropriate way and wait up to 60 s.
+
+    - Windows : launch Docker Desktop.exe (GUI app)
+    - Linux   : `sudo systemctl start docker`  (system service, no GUI)
+
+    Returns True if the daemon becomes reachable within the timeout.
+    """
+    os_name = _platform.system()
+
+    if os_name == "Windows":
+        import os as _os
+        if not _os.path.exists(_DOCKER_DESKTOP_EXE):
+            log.warning(
+                f"Docker Desktop not found at {_DOCKER_DESKTOP_EXE!r}. Cannot auto-start."
+            )
+            return False
+        log.warning("Docker daemon not running. Launching Docker Desktop…")
+        try:
+            subprocess.Popen(
+                [_DOCKER_DESKTOP_EXE],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError as exc:
+            log.warning(f"Could not launch Docker Desktop: {exc}")
+            return False
+
+    elif os_name == "Linux":
+        log.warning("Docker daemon not running. Attempting: sudo systemctl start docker…")
+        try:
+            result = subprocess.run(
+                ["sudo", "systemctl", "start", "docker"],
+                capture_output=True, text=True, timeout=15,
+            )
+            if result.returncode != 0:
+                log.warning(f"systemctl start docker failed: {result.stderr.strip()}")
+                # Fallback: try service command (older distros / non-systemd)
+                log.warning("Falling back to: sudo service docker start…")
+                subprocess.run(
+                    ["sudo", "service", "docker", "start"],
+                    capture_output=True, text=True, timeout=15,
+                )
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            log.warning(f"Could not start Docker service: {exc}")
+            return False
+
+    else:
+        log.warning(f"Unsupported OS '{os_name}' — cannot auto-start Docker.")
+        return False
+
+    # Poll until the daemon responds (Docker Desktop on Windows can take 30–60 s)
+    log.info("Waiting for Docker daemon to be ready (up to 60 s)…")
+    for tick in range(30):
+        time.sleep(2)
+        if _is_docker_daemon_running():
+            log.info(f"Docker daemon ready after ~{(tick + 1) * 2} s")
+            return True
+        log.info(f"Docker not ready yet… ({(tick + 1) * 2}/60 s)")
+
+    log.warning("Docker daemon did not become ready in time.")
+    return False
+
+
 def _ensure_redis(retries: int = 5, delay: float = 2.0) -> redis.Redis:
     """
-    Ensure Redis is reachable. If not, start the 'my-redis' Docker container
-    first, then retry the connection up to `retries` times.
+    Ensure Redis is reachable. Works on Windows and Linux.
+
+    Recovery order:
+      1. Ping Redis — if reachable, return immediately.
+      2. Try `docker start my-redis` (covers: daemon running, container stopped).
+      3. If Docker daemon itself is not running:
+           Windows → launch Docker Desktop.exe and wait
+           Linux   → sudo systemctl start docker (or service docker start)
+         Then retry `docker start my-redis`.
+      4. Retry the Redis ping up to `retries` times.
     """
     # ── Step 1: quick probe ───────────────────────────────────────────────────
     try:
@@ -56,23 +157,39 @@ def _ensure_redis(retries: int = 5, delay: float = 2.0) -> redis.Redis:
     except redis.RedisError:
         pass  # not running — try to start it
 
-    # ── Step 2: start Docker container ───────────────────────────────────────
+    # ── Step 2: attempt docker start (fast path — daemon already running) ─────
     log.warning("Redis not reachable. Attempting to start Docker container 'my-redis'…")
+    container_started = False
     try:
         result = subprocess.run(
             ["docker", "start", "my-redis"],
             capture_output=True, text=True, timeout=10,
         )
         if result.returncode == 0:
-            log.info("'my-redis' container started. Waiting for Redis to be ready…")
+            log.info("'my-redis' container started.")
+            container_started = True
         else:
-            log.warning(f"docker start failed: {result.stderr.strip()}")
+            err = result.stderr.strip()
+            log.warning(f"docker start failed: {err}")
+            daemon_not_running = any(p in err.lower() for p in _DAEMON_NOT_RUNNING_PHRASES)
+            if daemon_not_running:
+                # ── Step 3: start Docker daemon (platform-aware), retry ───────
+                if _start_docker_daemon():
+                    retry = subprocess.run(
+                        ["docker", "start", "my-redis"],
+                        capture_output=True, text=True, timeout=10,
+                    )
+                    if retry.returncode == 0:
+                        log.info("'my-redis' container started after daemon launch.")
+                        container_started = True
+                    else:
+                        log.warning(f"docker start still failed: {retry.stderr.strip()}")
     except FileNotFoundError:
-        log.warning("Docker not found — cannot auto-start Redis.")
+        log.warning("'docker' CLI not found — cannot auto-start Redis.")
     except subprocess.TimeoutExpired:
         log.warning("docker start timed out.")
 
-    # ── Step 3: retry until Redis responds ───────────────────────────────────
+    # ── Step 4: retry Redis ping ──────────────────────────────────────────────
     for attempt in range(1, retries + 1):
         time.sleep(delay)
         try:
@@ -89,7 +206,8 @@ def _ensure_redis(retries: int = 5, delay: float = 2.0) -> redis.Redis:
 
 # ── Main camera loop ──────────────────────────────────────────────────────────
 
-def run_camera(source, show_display: bool = True, camera_id: str = CAMERA_ID):
+def run_camera(source, show_display: bool = True, camera_id: str = CAMERA_ID,
+               direction: str = CAMERA_DIRECTION):
     """
     Open video source, detect/track faces, push to Redis queue.
 
@@ -216,7 +334,7 @@ def run_camera(source, show_display: bool = True, camera_id: str = CAMERA_ID):
                         camera_id=camera_id,
                         raw_meta=raw_meta,
                         full_frame_image=thumb_jpeg,
-                        direction="unknown",
+                        direction=direction,
                     )
                     db.record_queued(sighting_id)
                     _push_to_queue(r, sighting_id, face_jpeg)

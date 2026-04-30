@@ -117,8 +117,11 @@
   }
   function sendReady()  { post({ type: "streamlit:componentReady", apiVersion: 1 }); }
   function sendHeight() {
-    const h = Math.max(document.documentElement.scrollHeight, document.body.scrollHeight);
-    post({ type: "streamlit:setFrameHeight", height: h + 8 });
+    const toolbar = document.getElementById("toolbar");
+    const grid    = document.getElementById("grid");
+    const tbH  = toolbar ? toolbar.getBoundingClientRect().height : 35;
+    const grH  = grid    ? grid.getBoundingClientRect().height    : 0;
+    post({ type: "streamlit:setFrameHeight", height: Math.ceil(tbH + grH) + 12 });
   }
   function sendValue() {
     updateCount();

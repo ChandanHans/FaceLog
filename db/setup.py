@@ -32,8 +32,8 @@ CREATE TABLE IF NOT EXISTS sightings (
     person_id        INT REFERENCES persons(id) ON DELETE SET NULL,
     detected_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     resolved_at      TIMESTAMPTZ,
-    direction        TEXT DEFAULT 'unknown'
-                         CHECK (direction IN ('entry', 'exit', 'unknown')),
+    direction        TEXT NOT NULL DEFAULT 'entry'
+                         CHECK (direction IN ('entry', 'exit')),
     camera_id        TEXT NOT NULL DEFAULT 'cam_01',
     face_image       BYTEA NOT NULL,                -- cropped face JPEG bytes
     face_encoding    BYTEA,                         -- pickled 128-D numpy array (cached)

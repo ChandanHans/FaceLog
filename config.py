@@ -32,7 +32,15 @@ CAMERA_SOURCE = os.getenv("CAMERA_SOURCE", "0")  # default: first webcam
 if CAMERA_SOURCE.isdigit():
     CAMERA_SOURCE = int(CAMERA_SOURCE)
 
-CAMERA_ID: str = os.getenv("CAMERA_ID")
+CAMERA_ID: str = os.getenv("CAMERA_ID", "cam_entry")
+CAMERA_DIRECTION: str = os.getenv("CAMERA_DIRECTION", "entry")  # 'entry' or 'exit'
+
+# Second camera (optional — leave CAMERA_SOURCE2 empty for single-camera mode)
+CAMERA_SOURCE2 = os.getenv("CAMERA_SOURCE2", "")   # e.g. "1" or rtsp://...
+if CAMERA_SOURCE2.isdigit():
+    CAMERA_SOURCE2 = int(CAMERA_SOURCE2)
+CAMERA_ID2: str = os.getenv("CAMERA_ID2", "cam_exit")
+CAMERA_DIRECTION2: str = os.getenv("CAMERA_DIRECTION2", "exit")
 
 # ─── Detection ────────────────────────────────────────────────────────────────
 DETECTION_WIDTH: int = 1000

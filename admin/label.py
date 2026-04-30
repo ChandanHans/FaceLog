@@ -57,12 +57,12 @@ def cmd_list(args):
     if not rows:
         print("No unmatched sightings.")
         return
-    print(f"\n{'ID':>6}  {'Detected At':<26}  {'Camera':<10}  {'Direction':<10}")
+    print(f"\n{'ID':>6}  {'Detected At':<26}  {'Camera':<10}  {'Dir':<6}")
     print("─" * 62)
     for r in rows:
         print(
             f"{r['id']:>6}  {str(r['detected_at']):<26}  "
-            f"{r['camera_id']:<10}  {r['direction']:<10}"
+            f"{r['camera_id']:<10}  {r['direction']:<6}"
         )
     print()
 
