@@ -84,7 +84,7 @@ def detect_faces_in_roi(
 
     gray = cv2.cvtColor(roi_r, cv2.COLOR_BGR2GRAY)
     faces_raw = face_cascade.detectMultiScale(
-        gray, scaleFactor=1.1, minNeighbors=7, minSize=(50, 50)
+        gray, scaleFactor=1.1, minNeighbors=10, minSize=(50, 50)
     )
 
     detections = []
@@ -107,8 +107,6 @@ def detect_faces_in_roi(
 
         is_frontal = False
         if n_eyes >= MIN_EYES_FOR_FRONTAL:
-            is_frontal = not too_small
-        elif FACE_ASPECT_RATIO_MIN <= ratio <= FACE_ASPECT_RATIO_MAX and fw >= MIN_FACE_WIDTH:
             is_frontal = not too_small
 
         face_cx = x1o + fx + fw // 2

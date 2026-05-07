@@ -57,7 +57,7 @@ MIN_FACE_QUEUE_WIDTH: int = 50
 MIN_FACE_QUEUE_HEIGHT: int = 50
 
 # Tracker
-MIN_CONSISTENT_DETECTIONS: int = 3
+MIN_CONSISTENT_DETECTIONS: int = 5
 FACE_TRACKER_DISTANCE: int = 80     # pixels (original resolution)
 FACE_TRACKER_TIMEOUT: int = 15      # frames before track is dropped
 

@@ -46,8 +46,8 @@ st.sidebar.markdown("---")
 if st.sidebar.button("🔄 Refresh"):
     import datetime as _dt_refresh
     _today_refresh = _dt_refresh.date.today()
-    st.session_state.pop("rs_from", None)
-    st.session_state.pop("rs_to", None)
+    st.session_state["rs_from"] = _today_refresh
+    st.session_state["rs_to"]   = _today_refresh
     st.rerun()
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -150,11 +150,15 @@ if page == "📋 Recent Sightings":
     _min_date = _oldest_date if _oldest_date else _today
     _max_date = _newest_date if _newest_date else _today
 
-    # Initialise session state defaults clamped within the allowed range
-    if "rs_from" not in st.session_state or not (_min_date <= st.session_state["rs_from"] <= _max_date):
-        st.session_state["rs_from"] = _max_date
-    if "rs_to" not in st.session_state or not (_min_date <= st.session_state["rs_to"] <= _max_date):
-        st.session_state["rs_to"] = _max_date
+    # Clamp stored session values so they always fall within the DB range
+    def _clamp(key):
+        v = st.session_state.get(key, _max_date)
+        if not isinstance(v, _dt.date):
+            v = _max_date
+        st.session_state[key] = max(_min_date, min(_max_date, v))
+
+    _clamp("rs_from")
+    _clamp("rs_to")
 
     st.sidebar.markdown("**Date filter**")
     _sc1, _sc2 = st.sidebar.columns(2)
@@ -248,8 +252,9 @@ elif page == "🔍 Review Unknowns":
     else:
         # ── Action panel (always at top) ──────────────────────────────────────
         existing_persons: list[tuple[int, str]] = db.get_person_names()
-        person_options = [_NEW] + [name for _, name in existing_persons]
-        person_id_by_name = {name: pid for pid, name in existing_persons}
+        # Show "Name (#id)" so duplicate names are always distinguishable
+        person_options = [_NEW] + [f"{name} (#{pid})" for pid, name in existing_persons]
+        person_id_by_option = {f"{name} (#{pid})": pid for pid, name in existing_persons}
 
         # Read selection returned by the component from the PREVIOUS render
         component_value = st.session_state.get("_img_sel_value", [])
@@ -323,7 +328,7 @@ elif page == "🔍 Review Unknowns":
                                     reference_image=face,
                                 )
                             else:
-                                pid = person_id_by_name[final_name]
+                                pid = person_id_by_option[selected_option]
                                 if action == "suspicious":
                                     db.update_person_label(pid, label="suspicious")
                                 if encoding is not None:
@@ -338,12 +343,14 @@ elif page == "🔍 Review Unknowns":
                     # Clean up unknown placeholder rows that are now orphaned
                     db.delete_orphaned_unknowns()
                     st.session_state["_img_sel_value"] = []
+                    # Strip "(#id)" suffix for display if selecting existing person
+                    _display_name = final_name if is_new else selected_option.rsplit(" (#", 1)[0]
                     if action == "known":
-                        st.success(f"✅ Labelled **{count}** sighting(s) as **{final_name}**.")
+                        st.success(f"✅ Labelled **{count}** sighting(s) as **{_display_name}**.")
                     else:
                         st.warning(
                             f"⚠️ Flagged **{count}** sighting(s) as suspicious"
-                            f"{(' (' + final_name + ')') if final_name else ''}."
+                            f"{(' (' + _display_name + ')') if _display_name else ''}."
                         )
                     st.rerun()
 

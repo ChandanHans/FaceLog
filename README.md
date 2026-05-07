@@ -7,11 +7,12 @@ FaceLog automates visual identity logging at entry/exit points, replacing manual
 ## Features
 
 - **Real-time detection** — YOLOv8 person detection + OpenCV Haar cascade face detection
-- **Background recognition** — Redis job queue + multiprocessing workers run face recognition without blocking the camera loop
+- **Background recognition** — Redis job queue (`facelog:face_queue`) + multiprocessing workers run face recognition without blocking the camera loop
 - **PostgreSQL logging** — every sighting stored with face image (BYTEA), timestamp, camera ID, direction, and match confidence
 - **Crash recovery** — `queue_audit` table mirrors Redis so unprocessed jobs can be re-queued after a restart
 - **Web dashboard** — Streamlit UI to review unknowns, label faces, and browse all persons and sightings
 - **Webcam capture** — multi-angle face capture CLI to enrol known persons
+- **Dual-camera support** — optional second camera for simultaneous entry + exit tracking
 - **Auto Redis restart** — automatically starts the `my-redis` Docker container if Redis is down
 
 ---
@@ -24,7 +25,7 @@ Camera loop (main process)
   │
   ├─► INSERT sightings (PostgreSQL)
   ├─► INSERT queue_audit (PostgreSQL)
-  └─► RPUSH face_queue (Redis)
+  └─► RPUSH facelog:face_queue (Redis)
               │
         Worker pool (2 processes)
               │  BLPOP → face_recognition
@@ -32,7 +33,7 @@ Camera loop (main process)
                   UPDATE queue_audit (processed=TRUE)
 
 Admin
-  streamlit run dashboard.py   ← review unknowns, browse sightings
+  streamlit run dashboard.py    ← review unknowns, browse sightings
   python main.py capture <name> ← enrol new person via webcam
 ```
 
@@ -41,7 +42,7 @@ Admin
 ## Project Structure
 
 ```
-facelog/
+entry-exit/
 ├── main.py              # Single CLI entry point
 ├── dashboard.py         # Streamlit web dashboard
 ├── config.py            # All settings (loaded from .env)
@@ -66,6 +67,10 @@ facelog/
 ├── admin/
 │   ├── label.py         # CLI: list / label sightings, import face/ dir
 │   └── capture.py       # Webcam multi-angle face capture → DB
+│
+├── components/
+│   └── image_selector/  # Custom Streamlit drag-to-select image grid
+│       └── index.html
 │
 ├── face/                # Person image folders (gitignored)
 │   └── <Name>/
@@ -110,8 +115,17 @@ Edit `.env`:
 ```env
 DB_URL=postgresql://postgres:yourpassword@localhost:5432/facelog
 REDIS_URL=redis://localhost:6379/0
+
+# Primary camera (entry)
 CAMERA_SOURCE=0
-CAMERA_ID=cam_01
+CAMERA_ID=cam_entry
+CAMERA_DIRECTION=entry
+
+# Second camera (optional — leave blank for single-camera mode)
+# CAMERA_SOURCE2=1
+# CAMERA_ID2=cam_exit
+# CAMERA_DIRECTION2=exit
+
 WORKER_PROCESSES=2
 RECOGNITION_TOLERANCE=0.48
 FACE_QUEUE_COOLDOWN=60
@@ -172,13 +186,19 @@ python main.py run --source video.mp4      # video file
 python main.py run --source rtsp://...     # RTSP stream
 python main.py run --no-display            # headless (server)
 python main.py run --workers 4
+python main.py run --direction entry       # mark sightings as 'entry'
+
+# Two-camera setup (entry + exit in one command)
+python main.py run --source 0 --camera-id cam_entry --direction entry `
+               --source2 1 --camera-id2 cam_exit --direction2 exit
 
 # Database
 python main.py setup-db
 
 # Webcam enrolment
 python main.py capture Alice
-python main.py capture Alice --photos 7 --min-angle 3
+python main.py capture Alice --photos 7
+python main.py capture Alice --photos 7 --min-angle 2
 
 # Admin CLI
 python main.py admin list
@@ -231,7 +251,7 @@ When labelling an unknown as **known**:
 | detected_at | TIMESTAMPTZ | When camera detected the face |
 | resolved_at | TIMESTAMPTZ | When worker finished matching |
 | direction | TEXT | `entry` / `exit` / `unknown` |
-| camera_id | TEXT | e.g. `cam_01` |
+| camera_id | TEXT | e.g. `cam_entry` |
 | face_image | BYTEA | Cropped face JPEG |
 | full_frame_image | BYTEA | Thumbnail of full frame |
 | confidence | FLOAT | Match score 0–1 |
@@ -257,8 +277,12 @@ All values can be set in `.env`. Defaults shown below.
 |----------|---------|-------------|
 | `DB_URL` | — | PostgreSQL connection string |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis connection URL |
-| `CAMERA_SOURCE` | `0` | Webcam index, video path, or RTSP URL |
-| `CAMERA_ID` | `cam_01` | Logical camera name stored in DB |
+| `CAMERA_SOURCE` | `0` | Primary camera — webcam index, video path, or RTSP URL |
+| `CAMERA_ID` | `cam_entry` | Logical name for primary camera stored in DB |
+| `CAMERA_DIRECTION` | `entry` | Direction tag for primary camera (`entry` or `exit`) |
+| `CAMERA_SOURCE2` | `` | Second camera source (blank = disabled) |
+| `CAMERA_ID2` | `cam_exit` | Logical name for second camera stored in DB |
+| `CAMERA_DIRECTION2` | `exit` | Direction tag for second camera (`entry` or `exit`) |
 | `WORKER_PROCESSES` | `2` | Number of recognition worker processes |
 | `RECOGNITION_TOLERANCE` | `0.48` | Face match threshold (lower = stricter) |
 | `FACE_QUEUE_COOLDOWN` | `60` | Seconds before same person can be re-queued |
@@ -274,3 +298,8 @@ All values can be set in `.env`. Defaults shown below.
 | `FACE_TRACKER_DISTANCE` | `80` | Max pixel distance to link same face across frames |
 | `FACE_TRACKER_TIMEOUT` | `15` | Frames before a track is dropped |
 | `MIN_EYES_FOR_FRONTAL` | `1` | Eye count threshold for frontal check (1 = CCTV-lenient) |
+| `MIN_FACE_WIDTH` | `50` | Minimum face bounding-box width (px) to process |
+| `MIN_FACE_QUEUE_WIDTH` | `50` | Minimum face crop width (px) to push to queue |
+| `MIN_FACE_QUEUE_HEIGHT` | `50` | Minimum face crop height (px) to push to queue |
+| `FACE_ASPECT_RATIO_MIN` | `0.7` | Minimum face width/height ratio (filters non-face blobs) |
+| `FACE_ASPECT_RATIO_MAX` | `1.3` | Maximum face width/height ratio |

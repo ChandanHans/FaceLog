@@ -15,6 +15,7 @@ import logging
 import os
 import signal
 import sys
+import time
 
 import redis
 
@@ -55,7 +56,16 @@ def run_worker():
     jobs_processed = 0
 
     while _running:
-        item = r.blpop(REDIS_QUEUE_KEY, timeout=2)
+        try:
+            item = r.blpop(REDIS_QUEUE_KEY, timeout=2)
+        except redis.RedisError as exc:
+            log.warning(f"Redis connection error: {exc} — retrying in 3 s…")
+            time.sleep(3)
+            try:
+                r = redis.from_url(REDIS_URL, decode_responses=False)
+            except Exception:
+                pass
+            continue
         if item is None:
             continue
 

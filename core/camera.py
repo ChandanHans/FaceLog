@@ -8,6 +8,7 @@ frontal faces to Redis for background recognition.
 
 import json
 import logging
+import random
 import subprocess
 import sys
 import time
@@ -254,6 +255,8 @@ def run_camera(source, show_display: bool = True, camera_id: str = CAMERA_ID,
     fps_timer = time.time()
     fps_val = 0.0
     fps_counter = 0
+    track_colors: dict = {}      # face_id → (B, G, R) random colour
+    centroid_history: dict = {}  # face_id → list of (cx_d, cy_d) in display coords
 
     log.info("Camera loop started")
 
@@ -304,6 +307,26 @@ def run_camera(source, show_display: bool = True, camera_id: str = CAMERA_ID,
 
             last_boxes = person_boxes
             last_tracked = tracker.update(frame_detections, frame_no)
+
+            # ── Assign colours + record centroid history ──────────────────
+            active_ids = {fid for fid, _ in last_tracked}
+            for face_id, det in last_tracked:
+                if face_id not in track_colors:
+                    track_colors[face_id] = (
+                        random.randint(50, 255),
+                        random.randint(50, 255),
+                        random.randint(50, 255),
+                    )
+                cx_o, cy_o = det["center"]
+                cx_d = int(cx_o / scale_x)
+                cy_d = int(cy_o / scale_y)
+                centroid_history.setdefault(face_id, []).append((cx_d, cy_d))
+                if len(centroid_history[face_id]) > 60:
+                    centroid_history[face_id] = centroid_history[face_id][-60:]
+            # Prune history for expired tracks
+            for fid in list(centroid_history):
+                if fid not in active_ids:
+                    del centroid_history[fid]
 
             # ── Queue eligible faces ──────────────────────────────────────
             for face_id, det in last_tracked:
@@ -359,10 +382,15 @@ def run_camera(source, show_display: bool = True, camera_id: str = CAMERA_ID,
                 fh_d = int(fh / scale_y)
 
                 count = tracker.get_detect_count(face_id)
-                if det["is_frontal"]:
-                    color, label = (0, 255, 0), f"#{face_id} ({count})"
-                else:
-                    color, label = (0, 165, 255), f"#{face_id} angled"
+                color = track_colors.get(face_id, (0, 255, 0))
+                label = f"#{face_id} ({count})" if det["is_frontal"] else f"#{face_id} angled"
+
+                # Draw centroid trail
+                history = centroid_history.get(face_id, [])
+                for i in range(1, len(history)):
+                    cv2.line(display, history[i - 1], history[i], color, 2)
+                if history:
+                    cv2.circle(display, history[-1], 5, color, -1)
 
                 cv2.rectangle(display, (fx_d, fy_d), (fx_d + fw_d, fy_d + fh_d), color, 2)
                 cv2.putText(display, label, (fx_d, fy_d - 6),
