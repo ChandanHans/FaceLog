@@ -107,9 +107,18 @@ def get_person_names() -> list[tuple[int, str]]:
 
 
 def delete_person(person_id: int) -> None:
-    """Delete a person record. Related sightings get person_id = NULL."""
+    """Delete a person record. Related sightings are reset to unmatched so
+    they are picked up again by re-match."""
     with get_conn() as conn:
         cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE sightings
+               SET status = 'unmatched', person_id = NULL, resolved_at = NULL
+             WHERE person_id = %s
+            """,
+            (person_id,),
+        )
         cur.execute("DELETE FROM persons WHERE id = %s", (person_id,))
 
 
